@@ -24,9 +24,21 @@ const powerChart = new PowerChart(document.getElementById('powerChart') as HTMLC
 const hudSlider = document.getElementById('intensity') as HTMLInputElement;
 
 if (import.meta.env.DEV) {
-  Object.assign(window, { __world: world, __state: state, __storm: storm, __hydro: hydro });
+  Object.assign(window, {
+    __world: world,
+    __state: state,
+    __storm: storm,
+    __hydro: hydro,
+    __pick: (x: number, y: number) => {
+      pointer.x = (x / window.innerWidth) * 2 - 1;
+      pointer.y = -(y / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(pointer, world.camera);
+      return raycaster
+        .intersectObjects(world.buildings.meshes, false)
+        .map((h) => ({ id: h.object.userData.buildingId, distance: +h.distance.toFixed(1) }));
+    },
+  });
 }
-
 const hud = new Hud({
   onMode: (mode) => {
     storm.mode = mode;
@@ -61,6 +73,10 @@ const hud = new Hud({
   onToggleTurbines: () => power.toggleTurbines(state),
   onToggleGrid: () => power.toggleGrid(state),
 });
+
+if (import.meta.env.DEV) {
+  Object.assign(window, { __hud: hud });
+}
 
 // ---------------------------------------------------------------- selection
 const raycaster = new THREE.Raycaster();

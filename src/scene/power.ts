@@ -177,7 +177,7 @@ export class PowerLayer {
       new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.3,
+        opacity: 0.07,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       }),
@@ -280,7 +280,7 @@ export class PowerLayer {
   }
 
   setXray(amount: number): void {
-    (this.gridLines.material as THREE.LineBasicMaterial).opacity = 0.24 + amount * 0.42;
+    (this.gridLines.material as THREE.LineBasicMaterial).opacity = 0.07 + amount * 0.45;
   }
 
   update(state: SimState, dt: number): void {
@@ -330,7 +330,7 @@ export class PowerLayer {
       const mag = clamp(Math.abs(net) / 3, 0, 1);
       this.tmpColor
         .copy(net >= 0 ? this.exportColor : this.importColor)
-        .multiplyScalar(0.15 + mag * 0.95);
+        .multiplyScalar(0.06 + mag * 0.5);
       const o = i * GRID_SEGMENTS * 6;
       for (let v = 0; v < GRID_SEGMENTS * 2; v++) {
         colors[o + v * 3] = this.tmpColor.r;

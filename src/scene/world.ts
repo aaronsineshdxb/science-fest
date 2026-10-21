@@ -35,7 +35,7 @@ function paletteFor(elevation: number, stormy: number): Palette {
     ambient: 0.95,
   };
   const dusk: Palette = {
-    horizon: new THREE.Color('#c9793f'),
+    horizon: new THREE.Color('#b4764f'),
     zenith: new THREE.Color('#27324e'),
     cloud: new THREE.Color('#6b5f68'),
     sun: new THREE.Color('#ff9b4d'),
@@ -79,6 +79,7 @@ function paletteFor(elevation: number, stormy: number): Palette {
 
   // Storm drains the colour out of the sky.
   const grey = new THREE.Color('#59606b');
+  out.horizon.lerp(grey, stormy * 0.62);
   out.zenith.lerp(grey, stormy * 0.55);
   out.cloud.lerp(new THREE.Color('#454b55'), stormy * 0.6);
   return out;
@@ -127,14 +128,14 @@ export class World {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.6, 3000);
-    this.camera.position.set(-228, 148, 176);
+    this.camera.position.set(-238, 112, -196);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.075;
-    this.controls.target.set(0, 5, 0);
+    this.controls.target.set(0, 20, 0);
     this.controls.minDistance = 18;
-    this.controls.maxDistance = 520;
+    this.controls.maxDistance = 430;
     this.controls.maxPolarAngle = Math.PI * 0.495;
     this.controls.minPolarAngle = 0.12;
 
@@ -233,7 +234,7 @@ export class World {
     const mesh = new THREE.InstancedMesh(geo, mat, count);
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + rng() * 0.05;
-      const r = range(rng, layout.half + 60, layout.half + 230);
+      const r = range(rng, layout.half + 640, layout.half + 1000);
       const h = range(rng, 18, 96);
       const w = range(rng, 16, 42);
       const d = range(rng, 16, 42);
@@ -310,16 +311,17 @@ export class World {
     this.sun.position.copy(sunDir).multiplyScalar(320).add(new THREE.Vector3(0, 0, 0));
     this.sun.target.position.set(0, 0, 0);
     this.sun.color.copy(pal.sunLight);
-    this.sun.intensity = Math.max(0.02, elevation) * 2.4 * (1 - storminess * 0.65) + flashPulse * 1.6;
+    this.sun.intensity =
+      Math.pow(Math.max(0.02, elevation), 0.55) * 3.1 * (1 - storminess * 0.45) + flashPulse * 1.6;
 
     this.hemi.color.copy(pal.zenith).lerp(new THREE.Color('#ffffff'), 0.35);
-    this.hemi.groundColor.set('#12141a');
-    this.hemi.intensity = 0.25 + pal.ambient * 0.55 + flashPulse * 0.5;
-    this.ambient.intensity = 0.1 + night * 0.1;
+    this.hemi.groundColor.set('#15181e');
+    this.hemi.intensity = 0.45 + pal.ambient * 0.75 + flashPulse * 0.5;
+    this.ambient.intensity = 0.18 + night * 0.12;
 
     const fog = this.scene.fog as THREE.FogExp2;
-    fog.color.copy(pal.fog).lerp(new THREE.Color('#101620'), storminess * 0.5);
-    fog.density = 0.0026 + storminess * 0.0042;
+    fog.color.copy(pal.fog).multiplyScalar(0.62).lerp(new THREE.Color('#0d1219'), storminess * 0.45);
+    fog.density = 0.0005 + storminess * 0.0013;
 
     // The street lamps dim when the district has to shed load.
     this.buildings.setNight(night, state.power.lightingFactor);

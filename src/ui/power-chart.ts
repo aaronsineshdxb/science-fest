@@ -68,8 +68,8 @@ export class PowerChart {
       ctx.fill();
     };
 
-    area((s) => s.solarKw + s.hydroKw, 'rgba(86,217,200,0.45)');
-    area((s) => s.solarKw, 'rgba(255,180,84,0.45)');
+    area((s) => s.solarKw + s.hydroKw, 'rgba(86,217,200,0.4)');
+    area((s) => s.solarKw, 'rgba(240,166,58,0.92)');
 
     // Outline of the total generation.
     ctx.beginPath();
