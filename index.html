@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Rain Harvest — District 7</title>
+    <meta name="description" content="A Three.js simulation of urban rainwater harvesting: rooftop catchment, cisterns, district storage and sewer surcharge." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C11 11 7 15 7 20a9 9 0 0 0 18 0c0-5-4-9-9-17z' fill='%2356d9c8'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div class="ui">
+      <header class="panel brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>Rain Harvest</h1>
+          <p>District 7 &middot; rooftop catchment &amp; storage</p>
+        </div>
+      </header>
+
+      <section class="panel weather">
+        <div class="weather-now">
+          <div class="clock" id="clock">16:24</div>
+          <div class="clock-meta">
+            <span id="dayLabel">Day 1</span>
+            <span class="dot">&bull;</span>
+            <span id="stormLabel">Clear</span>
+          </div>
+        </div>
+        <div class="weather-gauge">
+          <div class="gauge-head">
+            <span>Rainfall</span>
+            <b id="intensityValue">0.0 <i>mm/h</i></b>
+          </div>
+          <div class="gauge-track"><span id="intensityBar"></span></div>
+        </div>
+      </section>
+
+      <section class="panel stats" id="stats">
+        <h2 class="panel-title">Water balance</h2>
+        <div class="stat">
+          <span class="stat-label">Fell on the district</span>
+          <span class="stat-value"><b id="v-rain">0</b><i>m³</i></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Harvested into storage</span>
+          <span class="stat-value"><b id="v-harvest">0</b><i>m³</i></span>
+          <div class="stat-bar"><span id="b-harvest" class="accent"></span></div>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Used in place of mains</span>
+          <span class="stat-value"><b id="v-used">0</b><i>m³</i></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Overflowed to the sewer</span>
+          <span class="stat-value"><b id="v-sewer">0</b><i>m³</i></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Held in cisterns</span>
+          <span class="stat-value"><b id="v-stored">0</b><i>m³</i></span>
+          <div class="stat-bar"><span id="b-stored" class="accent"></span></div>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Street flooding</span>
+          <span class="stat-value"><b id="v-flood">0</b><i>%</i></span>
+          <div class="stat-bar"><span id="b-flood" class="warn"></span></div>
+        </div>
+        <dl class="mini">
+          <div><dt>Capture efficiency</dt><dd id="v-efficiency">0%</dd></div>
+          <div><dt>Demand met</dt><dd id="v-coverage">0%</dd></div>
+          <div><dt>Sewer load</dt><dd id="v-sewerload">0%</dd></div>
+        </dl>
+
+        <h2 class="panel-title spaced">Power balance</h2>
+        <div class="stat">
+          <span class="stat-label">Generating</span>
+          <span class="stat-value"><b id="v-gen">0</b><i>kW</i></span>
+          <div class="stat-bar mix">
+            <span id="b-solar" class="solar"></span>
+            <span id="b-hydro" class="hydro"></span>
+          </div>
+        </div>
+        <div class="stat">
+          <span class="stat-label">District demand</span>
+          <span class="stat-value"><b id="v-load">0</b><i>kW</i></span>
+          <div class="stat-bar"><span id="b-load" class="warn"></span></div>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Battery</span>
+          <span class="stat-value"><b id="v-batt">0</b><i>%</i></span>
+          <div class="stat-bar"><span id="b-batt" class="accent"></span></div>
+        </div>
+        <dl class="mini">
+          <div><dt>Solar</dt><dd id="v-solar">0.0 kW</dd></div>
+          <div><dt>Hydro</dt><dd id="v-hydro">0.0 kW</dd></div>
+          <div><dt>Self-sufficient</dt><dd id="v-selfsuf">100%</dd></div>
+          <div><dt>Grid</dt><dd id="v-grid">connected</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel controls">
+        <h2 class="panel-title">Storm</h2>
+        <div class="segmented" id="modeSwitch">
+          <button data-mode="scripted" class="active">Scripted front</button>
+          <button data-mode="manual">Manual</button>
+        </div>
+        <div class="presets" id="presets">
+          <button data-preset="drizzle">Drizzle</button>
+          <button data-preset="steady">Steady</button>
+          <button data-preset="downpour">Downpour</button>
+          <button data-preset="burst">Cloudburst</button>
+        </div>
+        <label class="slider-row">
+          <span>Intensity</span>
+          <input id="intensity" type="range" min="0" max="80" step="0.5" value="0" />
+          <b id="sliderValue">0 mm/h</b>
+        </label>
+
+        <h2 class="panel-title spaced">Simulation</h2>
+        <div class="segmented" id="speedSwitch">
+          <button data-speed="2">2&times;</button>
+          <button data-speed="6" class="active">6&times;</button>
+          <button data-speed="15">15&times;</button>
+          <button data-speed="40">40&times;</button>
+        </div>
+        <div class="button-row">
+          <button id="pauseBtn" class="ghost">Pause</button>
+          <button id="xrayBtn" class="ghost">X-ray <kbd>X</kbd></button>
+        </div>
+
+        <h2 class="panel-title spaced">Operator</h2>
+        <div class="button-row">
+          <button id="washBtn">Wash streets</button>
+          <button id="irrigateBtn">Irrigate park</button>
+        </div>
+
+        <h2 class="panel-title spaced">Power</h2>
+        <div class="button-row">
+          <button id="turbineBtn" class="on">Runoff turbines</button>
+          <button id="gridBtn">Island grid</button>
+        </div>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <section class="panel inspector" id="inspector">
+        <h2 class="panel-title" id="inspectorTitle">District</h2>
+        <div id="inspectorBody"></div>
+      </section>
+
+      <section class="panel timeline">
+        <div class="timeline-head">
+          <h2 class="panel-title">Last three hours</h2>
+          <div class="legend">
+            <span><i class="swatch rain"></i>rainfall</span>
+            <span><i class="swatch stored"></i>stored</span>
+          </div>
+        </div>
+        <canvas id="chart"></canvas>
+        <div class="timeline-head spaced">
+          <h2 class="panel-title">District grid</h2>
+          <div class="legend">
+            <span><i class="swatch solar"></i>solar</span>
+            <span><i class="swatch hydro"></i>hydro</span>
+            <span><i class="swatch demand"></i>demand</span>
+          </div>
+        </div>
+        <canvas id="powerChart"></canvas>
+        <footer class="hints">
+          <span>drag to orbit</span><span>scroll to zoom</span><span>click a building to inspect</span>
+          <span><kbd>space</kbd> pause</span><span><kbd>X</kbd> x-ray</span><span><kbd>1</kbd>–<kbd>4</kbd> storms</span>
+        </footer>
+      </section>
+    </div>
+
+    <div id="loading"><span></span>building district…</div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
