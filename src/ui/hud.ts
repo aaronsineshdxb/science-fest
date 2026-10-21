@@ -218,7 +218,8 @@ export class Hud {
     // The generation bar splits into solar and hydro.
     this.bars.solar.style.width = `${(power.solarKw / mix) * 100}%`;
     this.bars.hydro.style.width = `${(power.hydroKw / mix) * 100}%`;
-    this.bars.load.style.width = `${Math.min(100, (power.demandKw / Math.max(1, power.demandKw + Math.max(0, power.gridKw))) * 100)}%`;
+    // The demand bar fills towards what the district can make right now.
+    this.bars.load.style.width = `${Math.min(100, (power.demandKw / Math.max(0.01, power.generationKw)) * 100)}%`;
     this.bars.battery.style.width = `${Math.max(0, Math.min(100, soc))}%`;
   }
 

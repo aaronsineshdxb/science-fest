@@ -179,11 +179,11 @@ export class Hydrology {
     // ---- pass 4: the sewer ---------------------------------------------
     const sewer = state.sewer;
     // The district turbine house takes a slice of the runoff on its way to the
-    // sewer and releases it again on the next step.
+    // sewer and releases it again on the next step, which takes the peak off
+    // the storm drainage while the plant is running.
     const power = state.power;
     const returned = power.spillReturn;
-    const divertable = Math.max(0, toSewer - returned);
-    const diverted = power.runTurbines ? Math.min(divertable, RUNOFF_DIVERT_CAP * h) : 0;
+    const diverted = power.runTurbines ? Math.min(Math.max(0, toSewer), RUNOFF_DIVERT_CAP * h) : 0;
     power.spillReturn = diverted;
     power.runoffFlow = diverted / h;
 

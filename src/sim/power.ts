@@ -12,8 +12,11 @@ const G = 9.81;
 const DOWNSPOUT_EFFICIENCY = 0.62;
 const RUNOFF_EFFICIENCY = 0.55;
 
-/** Net head of the runoff turbines: the drop into the trunk sewer (m). */
-const RUNOFF_HEAD = 6;
+/**
+ * Net head of the runoff turbines: the district sits on a slope and the trunk
+ * sewer drops to the outfall (m).
+ */
+const RUNOFF_HEAD = 12;
 
 /** How much runoff the district turbine house can swallow (m³/h). */
 export const RUNOFF_DIVERT_CAP = 1400;

@@ -4,12 +4,9 @@ import { clamp } from '../core/rng';
 import type { CityLayout } from '../sim/city';
 import type { SimState } from '../sim/types';
 
-/** Area of one panel including the gap between rows (m²). */
-const PANEL_AREA = 2.4;
-
-/** Spacing between panel centres (m). */
-const PANEL_GAP_X = 2.1;
-const PANEL_GAP_Z = 1.35;
+/** Panel size (m). */
+const PANEL_W = 1.9;
+const PANEL_D = 1.05;
 
 /** Tilt of the arrays toward the equator (rad). */
 const PANEL_TILT = 0.35;
@@ -19,14 +16,6 @@ const MAST_HEIGHT = 22;
 
 /** Segments used to draw one catenary of the overhead grid. */
 const GRID_SEGMENTS = 3;
-
-export interface RoofProp {
-  buildingId: number;
-  x: number;
-  z: number;
-  /** Radius of the obstacle (m). */
-  r: number;
-}
 
 /**
  * Everything the district uses to make electricity.
@@ -57,9 +46,13 @@ export class PowerLayer {
   private readonly mast: THREE.Vector3;
   private readonly spinner = new THREE.Quaternion();
   private readonly baseQuaternion = new THREE.Quaternion();
-  private readonly spinAxis = new THREE.Vector3(0, 0, 1);
+  private readonly spinAxis = new THREE.Vector3(1, 0, 0);
+  private readonly rotorOffset = new THREE.Vector3();
+  private readonly exportColor = new THREE.Color('#ffb454');
+  private readonly importColor = new THREE.Color('#4fa8e8');
+  private readonly tmpColor = new THREE.Color();
 
-  constructor(layout: CityLayout, roofProps: RoofProp[]) {
+  constructor(layout: CityLayout) {
     // ---- panels on the roofs -----------------------------------------
     this.panelMaterial = new THREE.MeshStandardMaterial({
       color: '#0e1c2e',
@@ -69,30 +62,17 @@ export class PowerLayer {
       emissiveIntensity: 0,
     });
 
-    const panelGeo = new THREE.BoxGeometry(1.9, 0.07, 1.05);
+    const panelGeo = new THREE.BoxGeometry(PANEL_W, 0.07, PANEL_D);
     const transforms: THREE.Matrix4[] = [];
     for (const b of layout.buildings) {
-      if (b.pvArea <= 0) continue;
-      const count = Math.max(1, Math.round(b.pvArea / PANEL_AREA));
-      const cols = Math.max(1, Math.floor((b.w * 0.78) / PANEL_GAP_X));
-      const rows = Math.ceil(count / cols);
-      const spanX = (cols - 1) * PANEL_GAP_X;
-      const spanZ = (rows - 1) * PANEL_GAP_Z;
-      let placed = 0;
-      for (let r = 0; r < rows && placed < count; r++) {
-        for (let c = 0; c < cols && placed < count; c++) {
-          const x = b.x - spanX / 2 + c * PANEL_GAP_X;
-          const z = b.z - spanZ / 2 + r * PANEL_GAP_Z;
-          if (this.blocked(roofProps, b.id, x, z)) continue;
-          const m = new THREE.Matrix4();
-          m.compose(
-            new THREE.Vector3(x, b.h + 0.16, z),
-            new THREE.Quaternion().setFromEuler(new THREE.Euler(-PANEL_TILT, 0, 0)),
-            new THREE.Vector3(1, 1, 1),
-          );
-          transforms.push(m);
-          placed++;
-        }
+      for (const panel of b.pvPanels) {
+        const m = new THREE.Matrix4();
+        m.compose(
+          new THREE.Vector3(b.x + panel.x, b.h + 0.16, b.z + panel.z),
+          new THREE.Quaternion().setFromEuler(new THREE.Euler(-PANEL_TILT, 0, 0)),
+          new THREE.Vector3(1, 1, 1),
+        );
+        transforms.push(m);
       }
     }
 
@@ -104,10 +84,13 @@ export class PowerLayer {
     this.group.add(this.panelMesh);
 
     // ---- downspout turbines ------------------------------------------
+    // A pipe down the corner of the building, turning into a short
+    // horizontal run through the turbine.
     const turbineGeo = mergeGeometries(
       [
-        new THREE.CylinderGeometry(0.42, 0.42, 2.6, 10).rotateZ(Math.PI / 2),
-        new THREE.BoxGeometry(0.9, 1.1, 0.9).translate(1.5, 0, 0),
+        new THREE.CylinderGeometry(0.2, 0.2, 5.0, 8).translate(0, 4.0, 0),
+        new THREE.CylinderGeometry(0.46, 0.46, 2.8, 12).rotateZ(Math.PI / 2).translate(1.3, 1.5, 0),
+        new THREE.BoxGeometry(0.8, 1.2, 1.2).translate(2.5, 1.5, 0),
       ],
       false,
     )!;
@@ -119,7 +102,7 @@ export class PowerLayer {
     this.turbineHousing = new THREE.InstancedMesh(turbineGeo, turbineMat, Math.max(1, layout.buildings.length));
     this.turbineHousing.castShadow = true;
 
-    const rotorGeo = buildRotorGeometry(0.52, 3);
+    const rotorGeo = buildRotorGeometry(0.8, 3);
     const rotorMat = new THREE.MeshStandardMaterial({
       color: '#c8d2dc',
       roughness: 0.35,
@@ -129,17 +112,16 @@ export class PowerLayer {
     this.rotors.castShadow = true;
 
     layout.buildings.forEach((b, i) => {
-      // The turbine sits where the downspout lands, on the street corner.
-      const angle = Math.PI * 0.25;
-      const px = b.x + b.w / 2 - 0.9;
-      const pz = b.z + b.d / 2 - 0.9;
-      const pos = new THREE.Vector3(px, 1.9, pz);
-      const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, angle, 0));
+      // The turbine sits where the downspout lands, just outside the corner.
+      const px = b.x + b.w / 2 + 0.25;
+      const pz = b.z + b.d / 2 + 0.25;
+      // Turn the corner so the turbine points out at the street.
+      const rot = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI * 0.25, 0));
 
-      const m = new THREE.Matrix4().compose(pos, rot, new THREE.Vector3(1, 1, 1));
+      const m = new THREE.Matrix4().compose(new THREE.Vector3(px, 0, pz), rot, new THREE.Vector3(1, 1, 1));
       this.turbineHousing.setMatrixAt(i, m);
 
-      const rm = new THREE.Matrix4().compose(pos, rot, new THREE.Vector3(1, 1, 1));
+      const rm = new THREE.Matrix4().compose(new THREE.Vector3(px, 1.5, pz), rot, new THREE.Vector3(1, 1, 1));
       this.rotors.setMatrixAt(i, rm);
       this.rotorAngles.push(0);
     });
@@ -150,6 +132,8 @@ export class PowerLayer {
     this.group.add(this.turbineHousing, this.rotors);
 
     // ---- power house at the park -------------------------------------
+    const res = layout.reservoir;
+    this.mast = new THREE.Vector3(res.x - 16, MAST_HEIGHT, res.z + 9);
     const house = this.buildPowerHouse(layout);
     this.group.add(house);
     this.runner = house.userData.runner as THREE.Mesh;
@@ -157,8 +141,6 @@ export class PowerLayer {
     this.batteryGlow = house.userData.battery as THREE.MeshStandardMaterial;
 
     // ---- overhead grid -----------------------------------------------
-    const res = layout.reservoir;
-    this.mast = new THREE.Vector3(res.x - 16, MAST_HEIGHT, res.z + 9);
     const positions = new Float32Array(layout.buildings.length * GRID_SEGMENTS * 2 * 3);
     const colors = new Float32Array(layout.buildings.length * GRID_SEGMENTS * 2 * 3);
     layout.buildings.forEach((b, i) => {
@@ -204,15 +186,6 @@ export class PowerLayer {
     this.group.add(this.gridLines);
   }
 
-  /** True when a roof prop is in the way of a panel. */
-  private blocked(props: RoofProp[], buildingId: number, x: number, z: number): boolean {
-    for (const p of props) {
-      if (p.buildingId !== buildingId) continue;
-      if (Math.hypot(p.x - x, p.z - z) < p.r + 1.1) return true;
-    }
-    return false;
-  }
-
   /** The turbine house, battery and substation that sit in the park. */
   private buildPowerHouse(layout: CityLayout): THREE.Group {
     const group = new THREE.Group();
@@ -237,18 +210,25 @@ export class PowerLayer {
     group.add(hall);
 
     // The runner of the runoff turbine, on the face of the hall.
-    const runner = new THREE.Mesh(buildRotorGeometry(1.5, 6), new THREE.MeshStandardMaterial({
-      color: '#d3dbe4',
-      roughness: 0.3,
-      metalness: 0.75,
-    }));
-    runner.position.set(x - 1, 2.6, z + 3.3);
+    const runnerPivot = new THREE.Group();
+    runnerPivot.position.set(x - 1, 2.6, z + 3.3);
+    runnerPivot.rotation.y = Math.PI / 2;
+    const runner = new THREE.Mesh(
+      buildRotorGeometry(1.5, 6),
+      new THREE.MeshStandardMaterial({ color: '#d3dbe4', roughness: 0.3, metalness: 0.75 }),
+    );
     runner.castShadow = true;
-    group.add(runner);
+    runnerPivot.add(runner);
+    group.add(runnerPivot);
 
     const housing = new THREE.Mesh(
       new THREE.CylinderGeometry(1.9, 1.9, 1.6, 20, 1, true),
-      new THREE.MeshStandardMaterial({ color: '#39414b', roughness: 0.6, metalness: 0.4, side: THREE.DoubleSide }),
+      new THREE.MeshStandardMaterial({
+        color: '#39414b',
+        roughness: 0.6,
+        metalness: 0.4,
+        side: THREE.DoubleSide,
+      }),
     );
     housing.rotation.x = Math.PI / 2;
     housing.position.set(x - 1, 2.6, z + 3.3);
@@ -311,20 +291,21 @@ export class PowerLayer {
     this.panelMaterial.emissiveIntensity = sun * 0.85;
 
     // The downspout runners spin at a rate set by the water going past them.
+    this.baseQuaternion.setFromEuler(new THREE.Euler(0, -Math.PI * 0.25, 0));
+    // The runner sits in the horizontal run of the pipe, off the corner.
+    this.rotorOffset.set(1.4, 1.5, 0).applyQuaternion(this.baseQuaternion);
     for (let i = 0; i < state.buildings.length; i++) {
       const b = state.buildings[i];
-      const target = b.hydroKw * 30;
-      this.rotorAngles[i] += dt * target;
+      this.rotorAngles[i] += dt * b.hydroKw * 30;
       const angle = this.rotorAngles[i];
 
       this.spinner.setFromAxisAngle(this.spinAxis, angle);
-      this.baseQuaternion.setFromEuler(new THREE.Euler(0, Math.PI * 0.25, 0));
-      this.baseQuaternion.multiply(this.spinner);
-
-      const px = b.x + b.w / 2 - 0.9;
-      const pz = b.z + b.d / 2 - 0.9;
-      this.dummy.position.set(px, 1.9, pz);
-      this.dummy.quaternion.copy(this.baseQuaternion);
+      this.dummy.position.set(
+        b.x + b.w / 2 + 0.25 + this.rotorOffset.x,
+        1.5,
+        b.z + b.d / 2 + 0.25 + this.rotorOffset.z,
+      );
+      this.dummy.quaternion.copy(this.baseQuaternion).multiply(this.spinner);
       this.dummy.scale.set(1, 1, 1);
       this.dummy.updateMatrix();
       this.rotors.setMatrixAt(i, this.dummy.matrix);
@@ -332,7 +313,7 @@ export class PowerLayer {
     this.rotors.instanceMatrix.needsUpdate = true;
 
     // The runoff runner at the power house spins about its own axis.
-    this.runner.rotation.z += dt * (power.runoffKw > 0.01 ? 3 + power.runoffKw * 5 : 0);
+    this.runner.rotation.x += dt * (power.runoffKw > 0.01 ? 3 + power.runoffKw * 5 : 0);
 
     const load = clamp(power.generationKw / Math.max(1, power.demandKw), 0, 2);
     this.houseGlow.emissiveIntensity = 0.15 + load * 0.9;
@@ -343,35 +324,36 @@ export class PowerLayer {
 
     // Overhead lines: amber where a building pushes power out, blue where it draws.
     const colors = this.gridColors.array as Float32Array;
-    const exportColor = new THREE.Color('#ffb454');
-    const importColor = new THREE.Color('#4fa8e8');
-    const tmp = new THREE.Color();
     for (let i = 0; i < state.buildings.length; i++) {
       const b = state.buildings[i];
       const net = b.netKw;
       const mag = clamp(Math.abs(net) / 3, 0, 1);
-      tmp.copy(net >= 0 ? exportColor : importColor).multiplyScalar(0.15 + mag * 0.95);
+      this.tmpColor
+        .copy(net >= 0 ? this.exportColor : this.importColor)
+        .multiplyScalar(0.15 + mag * 0.95);
       const o = i * GRID_SEGMENTS * 6;
       for (let v = 0; v < GRID_SEGMENTS * 2; v++) {
-        colors[o + v * 3] = tmp.r;
-        colors[o + v * 3 + 1] = tmp.g;
-        colors[o + v * 3 + 2] = tmp.b;
+        colors[o + v * 3] = this.tmpColor.r;
+        colors[o + v * 3 + 1] = this.tmpColor.g;
+        colors[o + v * 3 + 2] = this.tmpColor.b;
       }
     }
     this.gridColors.needsUpdate = true;
   }
 }
 
-/** A rotor: a hub with `blades` swept paddles, spinning about the Z axis. */
+/**
+ * A rotor: a hub with `blades` swept paddles, spinning about the X axis.
+ */
 function buildRotorGeometry(radius: number, blades: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  const hub = new THREE.CylinderGeometry(radius * 0.3, radius * 0.3, radius * 0.8, 10);
-  hub.rotateX(Math.PI / 2);
+  const hub = new THREE.CylinderGeometry(radius * 0.3, radius * 0.3, radius * 0.9, 10);
+  hub.rotateZ(Math.PI / 2);
   parts.push(hub);
   for (let i = 0; i < blades; i++) {
-    const blade = new THREE.BoxGeometry(radius * 0.26, radius * 1.7, radius * 0.5);
+    const blade = new THREE.BoxGeometry(radius * 0.5, radius * 1.7, radius * 0.26);
     blade.translate(0, radius * 1.05, 0);
-    blade.rotateZ((i / blades) * Math.PI * 2);
+    blade.rotateX((i / blades) * Math.PI * 2);
     parts.push(blade);
   }
   return mergeGeometries(parts, false)!;

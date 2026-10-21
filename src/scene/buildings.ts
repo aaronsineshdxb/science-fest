@@ -18,21 +18,10 @@ export interface BuildingVisual {
   base: THREE.Color;
 }
 
-/** Something already sitting on a roof that a PV panel has to dodge. */
-export interface RoofProp {
-  buildingId: number;
-  x: number;
-  z: number;
-  /** Radius of the obstacle (m). */
-  r: number;
-}
-
 export class BuildingLayer {
   readonly group = new THREE.Group();
   readonly material: THREE.MeshStandardMaterial;
   readonly meshes: THREE.Mesh[] = [];
-  /** Rooftop plant and tanks, so the PV arrays can be laid out around them. */
-  readonly roofProps: RoofProp[] = [];
   private readonly specs = new Map<number, Building>();
   private readonly greenRoofMaterial: THREE.MeshStandardMaterial;
   private readonly shrubMesh: THREE.InstancedMesh;
@@ -142,7 +131,6 @@ export class BuildingLayer {
       this.specs.set(b.id, b);
       this.group.add(mesh);
     }
-
     // Green roof planting.
     const shrubGeo = new THREE.IcosahedronGeometry(1, 0);
     const shrubMat = new THREE.MeshStandardMaterial({ color: '#3f6a33', roughness: 0.95, flatShading: true });
@@ -281,27 +269,16 @@ export class BuildingLayer {
         });
       }
     } else {
-      const count = rng() > 0.45 ? 1 + Math.floor(rng() * 2) : 0;
-      for (let i = 0; i < count; i++) {
-        const p = new THREE.Vector3(
-          b.x + range(rng, -b.w * 0.3, b.w * 0.3),
-          b.h + 0.5,
-          b.z + range(rng, -b.d * 0.3, b.d * 0.3),
-        );
+      // Rooftop plant and the gravity tank, both laid out by the city
+      // generator so the PV arrays can dodge them.
+      for (const u of b.acUnits) {
         acs.push({
-          p,
-          ry: rng() * Math.PI,
+          p: new THREE.Vector3(b.x + u.x, b.h + 0.5, b.z + u.z),
+          ry: u.ry,
         });
-        this.roofProps.push({ buildingId: b.id, x: p.x, z: p.z, r: 1.15 });
       }
-      if (rng() > 0.66 && b.w > 11 && b.d > 11) {
-        const p = new THREE.Vector3(
-          b.x + range(rng, -b.w * 0.22, b.w * 0.22),
-          b.h + 1.3,
-          b.z + range(rng, -b.d * 0.22, b.d * 0.22),
-        );
-        tanks.push({ p });
-        this.roofProps.push({ buildingId: b.id, x: p.x, z: p.z, r: 1.25 });
+      if (b.roofTank) {
+        tanks.push({ p: new THREE.Vector3(b.x + b.roofTank.x, b.h + 1.3, b.z + b.roofTank.z) });
       }
     }
     return mesh;

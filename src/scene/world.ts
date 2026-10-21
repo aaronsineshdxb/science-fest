@@ -160,7 +160,7 @@ export class World {
     this.network = new WaterNetwork(layout);
     this.scene.add(this.network.group);
 
-    this.power = new PowerLayer(layout, this.buildings.roofProps);
+    this.power = new PowerLayer(layout);
     this.scene.add(this.power.group);
 
     this.addPark(layout);

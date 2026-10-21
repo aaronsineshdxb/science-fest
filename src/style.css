@@ -208,7 +208,7 @@ body {
 }
 
 .stat {
-  padding: 7px 0;
+  padding: 5px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.045);
 }
 
@@ -228,7 +228,7 @@ body {
 
 .stat-value b {
   font-family: var(--mono);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -242,7 +242,7 @@ body {
 
 .stat-bar {
   height: 3px;
-  margin-top: 7px;
+  margin-top: 6px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.07);
   overflow: hidden;
@@ -604,9 +604,16 @@ input[type="range"]::-moz-range-thumb {
   background: rgba(255, 180, 84, 0.1);
 }
 
+/* --------------------------------------------------------------- power */
+.power {
+  grid-column: 1;
+  grid-row: 3;
+  align-self: end;
+}
+
 /* ------------------------------------------------------------- timeline */
 .timeline {
-  grid-column: 1 / span 2;
+  grid-column: 2;
   grid-row: 3;
   align-self: end;
   padding: 11px 13px 8px;
@@ -667,11 +674,11 @@ input[type="range"]::-moz-range-thumb {
 #powerChart {
   display: block;
   width: 100%;
-  height: 96px;
+  height: 82px;
 }
 
 #powerChart {
-  height: 76px;
+  height: 64px;
 }
 
 .timeline-head.spaced {
@@ -740,7 +747,7 @@ input[type="range"]::-moz-range-thumb {
 @media (max-width: 900px) {
   .ui {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr auto;
+    grid-template-rows: auto auto 1fr auto auto auto;
     padding: 12px;
     gap: 10px;
   }
@@ -758,13 +765,17 @@ input[type="range"]::-moz-range-thumb {
     align-self: start;
     max-height: 40vh;
   }
-  .controls {
+  .power {
     grid-row: 4;
+    grid-column: 1;
+  }
+  .controls {
+    grid-row: 5;
     grid-column: 1;
     max-height: 44vh;
   }
   .inspector {
-    grid-row: 5;
+    grid-row: 6;
     grid-column: 1;
     max-height: 30vh;
   }

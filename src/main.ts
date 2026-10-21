@@ -23,6 +23,10 @@ const chart = new Chart(document.getElementById('chart') as HTMLCanvasElement);
 const powerChart = new PowerChart(document.getElementById('powerChart') as HTMLCanvasElement);
 const hudSlider = document.getElementById('intensity') as HTMLInputElement;
 
+if (import.meta.env.DEV) {
+  Object.assign(window, { __world: world, __state: state, __storm: storm, __hydro: hydro });
+}
+
 const hud = new Hud({
   onMode: (mode) => {
     storm.mode = mode;

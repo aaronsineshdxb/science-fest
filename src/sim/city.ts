@@ -1,5 +1,12 @@
 import { clamp, intRange, mulberry32, range, type Rng } from '../core/rng';
-import { PV_YIELD_KW_PER_M2, ROOF_SPECS, type Building, type RoofType } from './types';
+import {
+  PV_YIELD_KW_PER_M2,
+  ROOF_SPECS,
+  type Building,
+  type RoofType,
+  type RooftopUnit,
+  type SolarPanel,
+} from './types';
 
 export interface Block {
   index: number;
@@ -110,6 +117,55 @@ function pickRoof(rng: Rng, height: number): RoofType {
   return 'concrete';
 }
 
+/** Spacing of the panels on a roof (m). */
+const PANEL_GAP_X = 2.1;
+const PANEL_GAP_Z = 1.35;
+/** Area each panel claims, spacing included (m²). */
+export const PANEL_AREA = 2.4;
+
+/**
+ * Lay a PV array out on a roof.
+ *
+ * The array has to dodge the plant and the gravity tank, so the panels are
+ * dropped onto a grid and any that would sit under something else are
+ * skipped. What comes back is what actually gets built, and the building is
+ * rated on that, not on the space it hoped for.
+ */
+function layoutPanels(
+  w: number,
+  d: number,
+  wanted: number,
+  acUnits: RooftopUnit[],
+  roofTank: { x: number; z: number } | null,
+): SolarPanel[] {
+  const maxCols = Math.max(1, Math.floor((w * 0.86) / PANEL_GAP_X));
+  const maxRows = Math.max(1, Math.floor((d * 0.86) / PANEL_GAP_Z));
+  // A square-ish array, centred on the roof.
+  const cols = Math.max(1, Math.min(maxCols, Math.ceil(Math.sqrt((wanted * PANEL_GAP_X) / PANEL_GAP_Z))));
+  const rows = Math.max(1, Math.min(maxRows, Math.ceil(wanted / cols)));
+  const spanX = (cols - 1) * PANEL_GAP_X;
+  const spanZ = (rows - 1) * PANEL_GAP_Z;
+
+  const blocked = (x: number, z: number): boolean => {
+    for (const u of acUnits) {
+      if (Math.abs(x - u.x) < 2.0 && Math.abs(z - u.z) < 1.3) return true;
+    }
+    if (roofTank && Math.abs(x - roofTank.x) < 2.0 && Math.abs(z - roofTank.z) < 1.6) return true;
+    return false;
+  };
+
+  const panels: SolarPanel[] = [];
+  for (let r = 0; r < rows && panels.length < wanted; r++) {
+    for (let c = 0; c < cols && panels.length < wanted; c++) {
+      const x = -spanX / 2 + c * PANEL_GAP_X;
+      const z = -spanZ / 2 + r * PANEL_GAP_Z;
+      if (blocked(x, z)) continue;
+      panels.push({ x, z });
+    }
+  }
+  return panels;
+}
+
 export function generateCity(seed = 20260421): CityLayout {
   const rng = mulberry32(seed);
   const extent = GRID * PITCH - STREET;
@@ -184,10 +240,27 @@ export function generateCity(seed = 20260421): CityLayout {
       const coefficient = ROOF_SPECS[roof].coefficient;
       const cisternCap = clamp(roofArea * 0.055, 5, 42);
 
-      // The solar retrofit: flat, unshaded roofs with a workable area get an
-      // array. Green roofs and tight plots are skipped.
-      const pvEligible = roof !== 'green' && roofArea >= 140 && rng() > 0.58;
-      const pvArea = pvEligible ? roofArea * range(rng, 0.12, 0.22) : 0;
+      // Rooftop plant and the gravity tank the district needs for pressure.
+      const acUnits: RooftopUnit[] = [];
+      const acCount = rng() > 0.45 ? 1 + Math.floor(rng() * 2) : 0;
+      for (let i = 0; i < acCount; i++) {
+        acUnits.push({
+          x: range(rng, -w * 0.3, w * 0.3),
+          z: range(rng, -d * 0.3, d * 0.3),
+          ry: rng() * Math.PI,
+        });
+      }
+      const roofTank =
+        rng() > 0.66 && w > 11 && d > 11
+          ? { x: range(rng, -w * 0.22, w * 0.22), z: range(rng, -d * 0.22, d * 0.22) }
+          : null;
+
+      // The solar retrofit: flat, workable roofs get an array. Green roofs and
+      // tight plots are skipped.
+      const pvEligible = roof !== 'green' && roofArea >= 100 && rng() > 0.45;
+      const wanted = pvEligible ? Math.round((roofArea * range(rng, 0.08, 0.16)) / PANEL_AREA) : 0;
+      const pvPanels = wanted > 0 ? layoutPanels(w, d, wanted, acUnits, roofTank) : [];
+      const pvArea = pvPanels.length * PANEL_AREA;
 
       buildings.push({
         id: id++,
@@ -214,6 +287,9 @@ export function generateCity(seed = 20260421): CityLayout {
         unmet: 0,
         turbineHead: Math.max(1.5, h - 3),
         pvArea,
+        pvPanels,
+        acUnits,
+        roofTank,
         pvCapacityKw: pvArea * PV_YIELD_KW_PER_M2,
         pvShade: 1,
         baseLoadKw: 0.12 + roofArea * 0.0012,

@@ -1,5 +1,21 @@
 export type RoofType = 'green' | 'metal' | 'concrete' | 'gravel';
 
+/** A rooftop air-handling unit. */
+export interface RooftopUnit {
+  /** Offset from the building centre (m). */
+  x: number;
+  z: number;
+  /** Facing (rad). */
+  ry: number;
+}
+
+/** A PV panel in the array on a roof. */
+export interface SolarPanel {
+  /** Offset from the building centre (m). */
+  x: number;
+  z: number;
+}
+
 export interface RoofSpec {
   type: RoofType;
   /** Fraction of rainfall that becomes runoff (1 - losses). */
@@ -63,6 +79,12 @@ export interface Building {
   turbineHead: number;
   /** Area of the PV array on the roof (m²). */
   pvArea: number;
+  /** The panels themselves, so the scene can build exactly what is rated. */
+  pvPanels: SolarPanel[];
+  /** Rooftop plant, which the PV array has to be laid out around. */
+  acUnits: RooftopUnit[];
+  /** Gravity tank on the roof, if the building has one. */
+  roofTank: { x: number; z: number } | null;
   /** Rated capacity of the PV array (kW at 1000 W/m²). */
   pvCapacityKw: number;
   /** Shading factor from taller neighbours, 0.3 (deep shade) to 1 (open sky). */

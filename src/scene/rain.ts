@@ -2,15 +2,17 @@ import * as THREE from 'three';
 import { mulberry32 } from '../core/rng';
 import type { CityLayout } from '../sim/city';
 
-const MAX_DROPS = 12000;
+const MAX_DROPS = 9000;
 const FALL_HEIGHT = 96;
 const HEIGHT_SCALE = 110;
 
 const vertexShader = /* glsl */ `
 precision highp float;
-attribute float aEnd;
+
+attribute vec3 aBase;
 attribute float aSpeed;
 attribute float aLen;
+attribute float aWidth;
 attribute float aSeed;
 
 uniform float uTime;
@@ -21,80 +23,92 @@ uniform vec2 uGridMin;
 uniform float uGridSize;
 uniform float uHeightScale;
 
+varying vec2 vQuad;
 varying float vFade;
 
 void main() {
-  float y = mod(position.y - uTime * aSpeed, uFall);
-  vec3 p = vec3(position.x, y, position.z);
-  p.x += (uFall - y) * uWind * (0.4 + 0.6 * aSeed);
+  float y = mod(aBase.y - uTime * aSpeed, uFall);
+
+  // The streak leans downwind.
+  vec3 dir = normalize(vec3(-uWind * 1.6, -1.0, 0.0));
+  vec3 p = vec3(aBase.x, y, aBase.z);
 
   vec2 uv = (p.xz - uGridMin) / uGridSize;
   float roof = texture2D(uHeight, clamp(uv, 0.001, 0.999)).r * uHeightScale;
 
-  float top = y + aEnd * aLen;
-  float fade = smoothstep(roof, roof + 1.2, top);
+  // Drops stop when they reach whatever is under them.
+  float bottom = y + position.y * aLen;
+  float head = y + (position.y + 0.5) * aLen;
+  float fade = smoothstep(roof, roof + 1.4, head) * step(roof - 0.2, bottom);
 
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vFade = fade * smoothstep(2.0, 12.0, -mv.z);
+  vec3 toCamera = normalize(cameraPosition - p);
+  vec3 side = normalize(cross(dir, toCamera));
+
+  vec3 world = p + side * (position.x * aWidth) + dir * (position.y * aLen);
+
+  vec4 mv = modelViewMatrix * vec4(world, 1.0);
+  vFade = fade * smoothstep(1.5, 9.0, -mv.z);
+  vQuad = vec2(position.x * 2.0, position.y + 0.5);
   gl_Position = projectionMatrix * mv;
 }
 `;
 
 const fragmentShader = /* glsl */ `
 precision highp float;
+varying vec2 vQuad;
 varying float vFade;
 uniform vec3 uColor;
 uniform float uOpacity;
+
 void main() {
-  if (vFade <= 0.001) discard;
-  gl_FragColor = vec4(uColor, vFade * uOpacity);
+  if (vFade <= 0.002) discard;
+  // Soft across the streak, fading towards its tail.
+  float across = 1.0 - abs(vQuad.x);
+  float along = smoothstep(0.0, 0.45, vQuad.y);
+  float alpha = across * across * along * vFade * uOpacity;
+  if (alpha <= 0.002) discard;
+  gl_FragColor = vec4(uColor, alpha);
 }
 `;
 
 export class Rain {
-  readonly mesh: THREE.LineSegments;
+  readonly mesh: THREE.Mesh;
   private readonly material: THREE.ShaderMaterial;
-  private readonly geometry: THREE.BufferGeometry;
+  private readonly geometry: THREE.InstancedBufferGeometry;
   private readonly rng = mulberry32(0x7a11);
   private active = 0;
   private paused = false;
   private time = 0;
 
   constructor(layout: CityLayout) {
-    const positions = new Float32Array(MAX_DROPS * 2 * 3);
-    const aEnd = new Float32Array(MAX_DROPS * 2);
-    const aSpeed = new Float32Array(MAX_DROPS * 2);
-    const aLen = new Float32Array(MAX_DROPS * 2);
-    const aSeed = new Float32Array(MAX_DROPS * 2);
+    const base = new Float32Array(MAX_DROPS * 3);
+    const speed = new Float32Array(MAX_DROPS);
+    const len = new Float32Array(MAX_DROPS);
+    const width = new Float32Array(MAX_DROPS);
+    const seed = new Float32Array(MAX_DROPS);
 
-    const span = layout.extent + 60;
+    const span = layout.extent + 70;
     for (let i = 0; i < MAX_DROPS; i++) {
-      const x = (this.rng() - 0.5) * span;
-      const z = (this.rng() - 0.5) * span;
-      const phase = this.rng() * FALL_HEIGHT;
-      const speed = 34 + this.rng() * 26;
-      const len = 0.9 + this.rng() * 2.4;
-      const seed = this.rng();
-      for (let v = 0; v < 2; v++) {
-        const idx = i * 2 + v;
-        positions[idx * 3] = x;
-        positions[idx * 3 + 1] = phase;
-        positions[idx * 3 + 2] = z;
-        aEnd[idx] = v;
-        aSpeed[idx] = speed;
-        aLen[idx] = len;
-        aSeed[idx] = seed;
-      }
+      base[i * 3] = (this.rng() - 0.5) * span;
+      base[i * 3 + 1] = this.rng() * FALL_HEIGHT;
+      base[i * 3 + 2] = (this.rng() - 0.5) * span;
+      speed[i] = 32 + this.rng() * 26;
+      len[i] = 1.6 + this.rng() * 3.4;
+      width[i] = 0.035 + this.rng() * 0.05;
+      seed[i] = this.rng();
     }
 
-    this.geometry = new THREE.BufferGeometry();
-    this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    this.geometry.setAttribute('aEnd', new THREE.BufferAttribute(aEnd, 1));
-    this.geometry.setAttribute('aSpeed', new THREE.BufferAttribute(aSpeed, 1));
-    this.geometry.setAttribute('aLen', new THREE.BufferAttribute(aLen, 1));
-    this.geometry.setAttribute('aSeed', new THREE.BufferAttribute(aSeed, 1));
-    this.geometry.setDrawRange(0, 0);
-    this.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1000);
+    const quad = new THREE.PlaneGeometry(1, 1);
+    this.geometry = new THREE.InstancedBufferGeometry();
+    this.geometry.index = quad.index;
+    this.geometry.setAttribute('position', quad.attributes.position);
+    this.geometry.setAttribute('uv', quad.attributes.uv);
+    this.geometry.setAttribute('aBase', new THREE.InstancedBufferAttribute(base, 3));
+    this.geometry.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speed, 1));
+    this.geometry.setAttribute('aLen', new THREE.InstancedBufferAttribute(len, 1));
+    this.geometry.setAttribute('aWidth', new THREE.InstancedBufferAttribute(width, 1));
+    this.geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seed, 1));
+    this.geometry.instanceCount = 0;
 
     // Height field so drops stop on roofs.
     const size = layout.heightGridSize;
@@ -112,6 +126,7 @@ export class Rain {
       fragmentShader,
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       uniforms: {
         uTime: { value: 0 },
@@ -121,25 +136,25 @@ export class Rain {
         uGridMin: { value: new THREE.Vector2(-layout.half, -layout.half) },
         uGridSize: { value: layout.extent },
         uHeightScale: { value: HEIGHT_SCALE },
-        uColor: { value: new THREE.Color('#9fc4dd') },
-        uOpacity: { value: 0.5 },
+        uColor: { value: new THREE.Color('#cfe4f5') },
+        uOpacity: { value: 0.55 },
       },
     });
 
-    this.mesh = new THREE.LineSegments(this.geometry, this.material);
+    this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 5;
+    this.mesh.renderOrder = 6;
   }
 
   update(dt: number, intensity: number): void {
     if (!this.paused) this.time += dt;
     this.material.uniforms.uTime.value = this.time;
 
-    const target = Math.min(1, Math.pow(intensity / 45, 0.62));
+    const target = Math.min(1, Math.pow(Math.max(intensity, 0.2) / 40, 0.6));
     this.active = Math.floor(MAX_DROPS * target);
-    this.geometry.setDrawRange(0, this.active * 2);
-    this.material.uniforms.uOpacity.value = 0.2 + 0.42 * Math.min(1, intensity / 40);
-    this.material.uniforms.uWind.value = 0.045 + 0.03 * Math.sin(this.time * 0.11);
+    this.geometry.instanceCount = this.active;
+    this.material.uniforms.uOpacity.value = 0.34 + 0.5 * Math.min(1, intensity / 40);
+    this.material.uniforms.uWind.value = 0.05 + 0.035 * Math.sin(this.time * 0.11);
   }
 
   setPaused(v: boolean): void {
